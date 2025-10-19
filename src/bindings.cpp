@@ -2,6 +2,8 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include <pybind11/functional.h>
+#include <ql/option.hpp>
+#include <ql/instruments/payoffs.hpp>
 #include <ql/processes/blackscholesprocess.hpp>
 #include <ql/processes/coxingersollrossprocess.hpp>
 #include <ql/processes/ornsteinuhlenbeckprocess.hpp>
@@ -105,6 +107,21 @@ PYBIND11_MODULE(vixmodels, m) {
         .def("columns", &Matrix::columns)
         .def("to_numpy", &matrix_to_numpy);
     
+    // Expose Option::Type enum
+    py::enum_<Option::Type>(m, "Option")
+        .value("Call", Option::Call)
+        .value("Put", Option::Put);
+    
+    // Expose Payoff base class
+    py::class_<Payoff, boost::shared_ptr<Payoff>>(m, "Payoff")
+        .def("__call__", &Payoff::operator());
+    
+    // Expose PlainVanillaPayoff
+    py::class_<PlainVanillaPayoff, Payoff, boost::shared_ptr<PlainVanillaPayoff>>(
+        m, "PlainVanillaPayoff")
+        .def(py::init<Option::Type, Real>(),
+             py::arg("type"), py::arg("strike"));
+    
     // Expose StochasticProcess base class (must come before derived classes)
     py::class_<StochasticProcess, boost::shared_ptr<StochasticProcess>>(m, "StochasticProcess")
         .def("size", &StochasticProcess::size);
@@ -204,21 +221,21 @@ PYBIND11_MODULE(vixmodels, m) {
         }, py::arg("maturity"), py::arg("initial_state"), py::arg("initial_regime"),
            "Get regime history for a single path");
     
-    // VIXOptionPricer
-    py::class_<VIXOptionPricer>(m, "VIXOptionPricer")
+    // VIXRSMCEngine
+    py::class_<VIXRSMCEngine>(m, "VIXRSMCEngine")
         .def(py::init<const boost::shared_ptr<RegimeProcess>&, Size, BigNatural>(),
              py::arg("process"), py::arg("num_paths"), py::arg("seed") = 42)
-        .def("price_call", &VIXOptionPricer::priceCall,
+        .def("price_call", &VIXRSMCEngine::priceCall,
              py::arg("initial_vix"), py::arg("initial_regime"),
              py::arg("strike"), py::arg("expiry_days"),
              py::arg("risk_free_rate"),
              "Price a VIX call option using Monte Carlo")
-        .def("price_put", &VIXOptionPricer::pricePut,
+        .def("price_put", &VIXRSMCEngine::pricePut,
              py::arg("initial_vix"), py::arg("initial_regime"),
              py::arg("strike"), py::arg("expiry_days"),
              py::arg("risk_free_rate"),
              "Price a VIX put option using Monte Carlo")
-        .def("simulate_vix_paths", [](VIXOptionPricer& self,
+        .def("simulate_vix_paths", [](VIXRSMCEngine& self,
                                        Real initial_vix,
                                        Size initial_regime,
                                        Size num_days,

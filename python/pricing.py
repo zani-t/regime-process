@@ -5,14 +5,9 @@ Complete pipeline: load data -> calibrate -> price options.
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from typing import Dict, Tuple
-import logging
 import sys
-import os
 
-# Import our modules
-from calibration import calibrate_vix_model
 from particle_filter import ParticleFilter
 
 # Import C++ extension
@@ -23,8 +18,150 @@ except ImportError:
     print("Run: mkdir build && cd build && cmake .. && make && cd ..")
     sys.exit(1)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+class GenericMCPricer:
+    """Generic regime-switching option pricer using RegimeSwitchingMCEngine."""
+    
+    def __init__(
+        self,
+        regime_process,
+        num_paths: int = 50000,
+        time_steps: int = 252,  # Daily steps for 1 year
+        seed: int = 42
+    ):
+        """
+        Initialize pricer with regime process and simulation parameters.
+        
+        Args:
+            regime_process: RegimeProcess object
+            num_paths: Number of Monte Carlo paths
+            time_steps: Number of time steps per year
+            seed: Random seed
+        """
+        self.engine = vixmodels.RegimeSwitchingMCEngine(
+            regime_process, num_paths, time_steps, seed
+        )
+    
+    def price_european(
+        self,
+        initial_val: float,
+        initial_regime: int,
+        strike: float,
+        maturity: float,
+        option_type: str,
+        risk_free_rate: float = 0.05
+    ) -> float:
+        """
+        Price European option with custom payoff.
+        
+        Args:
+            initial_val: Initial spot value
+            initial_regime: Initial regime
+            payoff: QuantLib payoff object
+            maturity: Time to maturity in years
+            strike: Strike price
+            option_type: 'call' or 'put'
+            risk_free_rate: Risk-free rate
+            use_cached: Whether to use cached paths
+            
+        Returns:
+            Option price
+        """
+        
+        initial_state = vixmodels.Array(1)
+        initial_state[0] = initial_val
+
+        if option_type.lower() == 'call':
+            payoff = vixmodels.PlainVanillaPayoff(
+                vixmodels.Option.Call, strike
+            )
+        elif option_type.lower() == 'put':
+            payoff = vixmodels.PlainVanillaPayoff(
+                vixmodels.Option.Put, strike
+            )
+        else:
+            raise ValueError("option_type only supports 'call' or 'put'")
+        
+        # Convert QuantLib payoff to Python function
+        def vix_payoff_func(x):
+        # x is numpy array, get first element and convert to percentage
+            value = float(x[0] * 100.0)  # Convert to float
+            return float(payoff(value))
+        
+        return self.engine.price_european(
+            maturity,
+            initial_state,
+            initial_regime,
+            risk_free_rate,
+            vix_payoff_func
+        )
+
+
+class VIXDedicatedMCPricer:
+    """VIX option pricer using dedicated VIXRSMCEngine."""
+
+    def __init__(
+        self,
+        regime_process,
+        num_paths: int = 50000,
+        seed: int = 42
+    ):
+        """
+        Initialize VIX option pricer with regime process and simulation parameters.
+        
+        Args:
+            regime_process: RegimeProcess object
+            num_paths: Number of Monte Carlo paths
+            seed: Random seed
+        """
+        self.engine = vixmodels.VIXRSMCEngine(
+            regime_process, num_paths, seed
+        )
+
+    def price_vix_option(
+        self,
+        initial_vix: float,
+        initial_regime: int,
+        strike: float,
+        expiry_days: int,
+        option_type: str = 'call',
+        risk_free_rate: float = 0.05
+    ) -> float:
+        """
+        Price a VIX option using Monte Carlo simulation.
+        
+        Args:
+            initial_vix: Current VIX level (percentage points)
+            initial_regime: Current regime index
+            strike: Strike price
+            expiry_days: Days to expiration
+            risk_free_rate: Risk-free rate (annual)
+            option_type: 'call' or 'put'
+            num_paths: Number of Monte Carlo paths
+            seed: Random seed
+            
+        Returns:
+            option_price: Estimated option price
+        """
+        
+        if option_type.lower() == 'call':
+            price = self.engine.price_call(
+                initial_vix,
+                initial_regime,
+                strike,
+                expiry_days,
+                risk_free_rate
+            )
+        elif option_type.lower() == 'put':
+            price = self.engine.price_put(
+                initial_vix,
+                initial_regime,
+                strike,
+                expiry_days,
+                risk_free_rate
+            )
+        else:
+            raise ValueError("option_type must be 'call' or 'put'")
+        return price
 
 
 def load_vix_data(filepath: str, date_col: str = 'Date', vix_col: str = 'VIX') -> pd.DataFrame:
@@ -79,10 +216,10 @@ def create_regime_process(params: Dict, dt: float = 1.0/252.0):
             # Regime 1: OU process (volatile)
             # Note: QuantLib OU process constructor is (kappa, sigma, x0, theta)
             process = vixmodels.create_ou_process(
-                kappa=p['kappa'],
-                sigma=p['sigma'],
                 x0=x0,
-                theta=p['theta']
+                kappa=p['kappa'],
+                theta=p['theta'],
+                sigma=p['sigma']
             )
         
         processes.append(process)
@@ -210,89 +347,3 @@ def infer_current_regime(
     most_likely_regime = np.argmax(regime_probs)
     
     return most_likely_regime, regime_probs
-
-
-def price_vix_option(
-    regime_process,
-    initial_vix: float,
-    initial_regime: int,
-    strike: float,
-    expiry_days: int,
-    risk_free_rate: float = 0.05,
-    option_type: str = 'call',
-    num_paths: int = 50000,
-    seed: int = 42
-) -> float:
-    """
-    Price a VIX option using Monte Carlo simulation.
-    
-    Args:
-        regime_process: RegimeProcess object
-        initial_vix: Current VIX level (percentage points)
-        initial_regime: Current regime index
-        strike: Strike price
-        expiry_days: Days to expiration
-        risk_free_rate: Risk-free rate (annual)
-        option_type: 'call' or 'put'
-        num_paths: Number of Monte Carlo paths
-        seed: Random seed
-        
-    Returns:
-        option_price: Estimated option price
-    """
-    pricer = vixmodels.VIXOptionPricer(regime_process, num_paths, seed)
-    
-    if option_type.lower() == 'call':
-        price = pricer.price_call(
-            initial_vix,
-            initial_regime,
-            strike,
-            expiry_days,
-            risk_free_rate
-        )
-    elif option_type.lower() == 'put':
-        price = pricer.price_put(
-            initial_vix,
-            initial_regime,
-            strike,
-            expiry_days,
-            risk_free_rate
-        )
-    else:
-        raise ValueError("option_type must be 'call' or 'put'")
-    return price
-
-
-if __name__ == "__main__":
-    # Example usage
-    data_path = os.path.join('data', 'vix_data.csv')
-    vix_df = load_vix_data(data_path)
-    vix_values = vix_df['VIX'].values
-    
-    logger.info("Calibrating VIX model...")
-    calibrated_params, log_likelihoods = calibrate_vix_model(vix_values)
-    # calibrated_params = initialize_vix_params(vix_values, num_regimes=2)
-    
-    logger.info("Inferring current regime...")
-    current_regime, regime_probs = infer_current_regime(vix_values, calibrated_params)
-    logger.info(f"Most likely current regime: {current_regime}")
-    logger.info(f"Regime probabilities: {regime_probs}")
-    
-    logger.info("Creating regime process...")
-    regime_process = create_regime_process(calibrated_params)
-    
-    current_vix = vix_values[-1]
-    strike_price = 13.0  # ATM option
-    expiry = 30  # 30 days to expiration
-    
-    logger.info("Pricing VIX call option...")
-    option_price = price_vix_option(
-        regime_process,
-        initial_vix=current_vix,
-        initial_regime=current_regime,
-        strike=strike_price,
-        expiry_days=expiry,
-        option_type='call'
-    )
-    
-    logger.info(f"Estimated VIX call option price (strike={strike_price}, expiry={expiry} days): {option_price:.2f}")

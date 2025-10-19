@@ -56,9 +56,9 @@ private:
 };
 
 // Specific VIX option pricer
-class VIXOptionPricer {
+class VIXRSMCEngine {
 public:
-    VIXOptionPricer(
+    VIXRSMCEngine(
         const boost::shared_ptr<RegimeProcess>& process,
         Size numPaths,
         BigNatural seed = 42

@@ -147,9 +147,9 @@ std::vector<Size> RegimeSwitchingMCEngine::getRegimeHistory(
     return regimes;
 }
 
-// VIXOptionPricer implementation
+// VIXRSMCEngine implementation
 
-VIXOptionPricer::VIXOptionPricer(
+VIXRSMCEngine::VIXRSMCEngine(
     const boost::shared_ptr<RegimeProcess>& process,
     Size numPaths,
     BigNatural seed)
@@ -158,7 +158,7 @@ VIXOptionPricer::VIXOptionPricer(
     QL_REQUIRE(numPaths_ > 0, "number of paths must be positive");
 }
 
-Real VIXOptionPricer::priceCall(
+Real VIXRSMCEngine::priceCall(
     Real initialVIX,
     Size initialRegime,
     Real strike,
@@ -212,7 +212,7 @@ Real VIXOptionPricer::priceCall(
     return (sumPayoffs / numPaths_) * discount;
 }
 
-Real VIXOptionPricer::pricePut(
+Real VIXRSMCEngine::pricePut(
     Real initialVIX,
     Size initialRegime,
     Real strike,
@@ -263,7 +263,7 @@ Real VIXOptionPricer::pricePut(
     return (sumPayoffs / numPaths_) * discount;
 }
 
-Matrix VIXOptionPricer::simulateVIXPaths(
+Matrix VIXRSMCEngine::simulateVIXPaths(
     Real initialVIX,
     Size initialRegime,
     Size numDays,
