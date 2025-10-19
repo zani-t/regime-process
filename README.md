@@ -23,9 +23,16 @@ project/
 ├── python/                       # Python modules
 │   ├── particle_filter.py        # Particle filter & Particle EM
 │   ├── calibration.py            # VIX model calibration
-│   └── pricing.py                # Main pricing script
+│   ├── pricing.py                # Pricing infrastructure
+|   ├── pricing_test.ipynb        # Test of pricing engines
+│   └── regime_viz.ipynb          # Visual of regime probabilities
 ├── data/                         # Data directory
-│   └── vix_data.csv              # Historical VIX data (user-provided)
+│   ├── vix_data.csv              # Short-window VIX data (user-provided)
+│   ├── long_vix_data.csv         # Long-window VIX data (user-provided)
+│   ├── short_active.png          # Short-window VIX chart
+│   └── long_active.png           # Long-window VIX chart
+├── download_vix_data.py          # yfinance download script
+├── requirements.txt              # Python requirements
 ├── CMakeLists.txt                # Build configuration
 ├── build.sh                      # Build script
 └── README.md                     # This file
@@ -43,6 +50,7 @@ project/
 - scipy >= 1.7
 - pandas >= 1.3
 - matplotlib >= 3.4
+- yfinance >= 0.2.66
 
 ## Installation
 
@@ -87,13 +95,13 @@ This will:
 
 ### 1. Prepare VIX Data
 
-Place your historical VIX data in `data/vix_data.csv`. The CSV should have at least two columns:
+Run the download script `download_vix_data.py` to place your historical VIX data in `data/vix_data.csv`. The CSV should have at least two columns:
 - `Date`: Date in YYYY-MM-DD format
-- `Close`: VIX closing value
+- `VIX`: VIX closing value
 
 Example:
 ```csv
-Date,Close
+Date,VIX
 2020-01-02,13.78
 2020-01-03,12.47
 2020-01-06,13.12
@@ -102,11 +110,7 @@ Date,Close
 
 You can download VIX data from Yahoo Finance (^VIX).
 
-### 2. Run the Complete Pipeline
-
-```bash
-python3 python/pricing.py
-```
+### 2. Run the Notebook
 
 This will:
 1. Load VIX historical data
@@ -115,22 +119,14 @@ This will:
 4. Simulate future VIX paths
 5. Price VIX call and put options at various strikes and expiries
 
-### 3. Customize Parameters
-
-Edit `pricing.py` to adjust:
-- `NUM_REGIMES`: Number of volatility regimes (default: 2)
-- `NUM_PARTICLES`: Particles for filtering (default: 1000)
-- `MAX_EM_ITERATIONS`: EM iterations (default: 30)
-- Option pricing parameters (strikes, expiries, paths)
-
 ## Model Description
 
 ### Regime-Switching CIR Process
 
-The VIX follows a regime-switching CIR process:
+The VIX follows a regime-switching pair of CIR and OU processes:
 
 ```
-dV_t = κ_s(θ_s - V_t)dt + σ_s√V_t dW_t
+dV_t = κ_s(θ_s - V_t)dt + σ_sg_{S_t}(V_t) dW_t
 ```
 
 where `s ∈ {0, 1, ..., K-1}` is the regime at time t, following a discrete Markov chain with transition matrix P.
@@ -168,89 +164,6 @@ Monte Carlo simulation:
 2. Simulate N paths using regime-switching CIR dynamics
 3. Calculate option payoffs at maturity
 4. Discount and average
-
-## Output
-
-The pipeline generates:
-
-1. **calibration_results.png**: Diagnostic plots showing:
-   - Historical VIX data
-   - EM convergence (log-likelihood)
-   - Estimated transition matrix
-   - CIR parameters by regime
-
-2. **simulated_paths.png**: Monte Carlo path simulation
-
-3. **option_prices.csv**: Priced options with columns:
-   - Expiry (days)
-   - Strike
-   - Moneyness (ATM/ITM/OTM)
-   - Call Price
-   - Put Price
-
-4. **Console output**: Detailed calibration and pricing results
-
-## API Reference
-
-### C++ Module (vixmodels)
-
-```python
-import vixmodels
-
-# Create CIR process
-process = vixmodels.create_cir_process(x0, kappa, theta, sigma)
-
-# Create transition matrix
-P = vixmodels.Matrix(K, K)
-P[i, j] = probability
-
-# Create regime-switching process
-regime_proc = vixmodels.RegimeProcess(processes, P, dt)
-
-# Create option pricer
-pricer = vixmodels.VIXOptionPricer(regime_proc, num_paths, seed)
-
-# Price options
-call_price = pricer.price_call(vix, regime, strike, days, rate)
-put_price = pricer.price_put(vix, regime, strike, days, rate)
-
-# Simulate paths
-paths = pricer.simulate_vix_paths(vix, regime, days, num_paths)
-```
-
-### Python Modules
-
-```python
-from calibration import calibrate_vix_model
-from pricing import create_regime_process, price_vix_option
-
-# Calibrate model
-params, log_liks = calibrate_vix_model(
-    vix_data, 
-    num_regimes=2,
-    num_particles=1000
-)
-
-# Create process for pricing
-regime_process = create_regime_process(params)
-
-# Price option
-price = price_vix_option(
-    regime_process,
-    initial_vix=20.0,
-    initial_regime=0,
-    strike=25.0,
-    expiry_days=30,
-    option_type='call'
-)
-```
-
-## Performance Notes
-
-- **Calibration**: ~1-5 minutes for 1000 particles, 30 EM iterations on typical dataset
-- **Pricing**: ~1-2 seconds for 50,000 paths, 30-day expiry
-- Use more particles for smoother parameter estimates
-- Use more paths for lower pricing variance
 
 ## Troubleshooting
 
