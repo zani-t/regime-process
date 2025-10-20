@@ -76,7 +76,7 @@ brew install cmake boost quantlib python3
 ### 2. Install Python Dependencies
 
 ```bash
-pip install numpy scipy pandas matplotlib pybind11
+pip install -r requirements.txt
 ```
 
 ### 3. Build the C++ Extension
