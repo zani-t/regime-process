@@ -205,6 +205,9 @@ pip install pybind11
 2. Cappé, O., Moulines, E., & Rydén, T. (2005). Inference in Hidden Markov Models.
 3. Cox, J. C., Ingersoll, J. E., & Ross, S. A. (1985). A theory of the term structure of interest rates.
 4. Hamilton, J. D. (1989). A new approach to the economic analysis of nonstationary time series.
+5. Ornstein, L. S., & Uhlenbeck, G. E. (1930). On the theory of the Brownian motion.
+6. Heston, S. L. (1993). A closed-form solution for options with stochastic volatility with applications to bond and currency options.
+7. Bates, D. S. (1996). Jumps and stochastic volatility: Exchange rate processes implicit in Deutsche Mark options.
 
 ## License
 
